@@ -1,0 +1,1 @@
+Put the XPlane SDK (Version 3.0.1 or higher) in this directory

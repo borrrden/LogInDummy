@@ -1,0 +1,4 @@
+XPlaneSDK/*
+build/
+.vs/
+!XPlaneSDK/INSTRUCTIONS.txt
