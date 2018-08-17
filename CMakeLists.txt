@@ -4,7 +4,7 @@ project (LogInDummy)
 INCLUDE(CheckIncludeFile)
 
 if(WIN32)
-    set(CMAKE_REQUIRED_DEFINITIONS -DWIN)
+    set(CMAKE_REQUIRED_DEFINITIONS -DIBM)
     add_definitions(-DIBM)
     set(variables
         CMAKE_C_FLAGS_DEBUG
