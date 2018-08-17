@@ -1,6 +1,6 @@
 This is just a silly experiment I did to learn my way around the X-Plane SDK.  It was inspired by a joke from a YouTube flight simmer that he wished a plugin reminded him to log into his virtual airline because he always forgot.  So this plugin will wait until all engines on the aircraft are running and then pop up a one time reminder.
 
-For those that wish to build this themselves, first you need to download the [X-Plane SDK](https://developer.x-plane.com/sdk/plugin-sdk-downloads/) version 3.0.1 or higher and put it into the XPlaneSDK folder in the repo (it should contain CHeaders, Libraries, etc directory).
+For those that wish to build this themselves, first you need to download the [X-Plane SDK](https://developer.x-plane.com/sdk/plugin-sdk-downloads/) version 3.0.1 or higher and put it into the XPlaneSDK folder in the repo (it should contain CHeaders, Libraries, etc directories without the 'SDK' folder).
 
 After that, just install CMake and run the following commands:
 
