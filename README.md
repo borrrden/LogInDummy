@@ -17,7 +17,7 @@ make -j8
 mkdir build
 cd build
 cmake -G "Visual Studio 15 2017 Win64" .. # Or another version of Visual Studio if you wish
-msbuild LogInDummy.sln # Or open with Visual Studio
+cmake --build . --target LogInDummy --config Release # Or open LogInDummy.sln with Visual Studio
 ```
 
 After that you should be able to find (in the Release directory) a file called either LogInDummy.xpl (Windows) or libLogInDummy.xpl (Linux / Mac).  This can go into your X-Plane Resources/Plugins/LogInDummy folder under the appropriate directory (e.g. win_x64/LogInDummy.xpl).  
