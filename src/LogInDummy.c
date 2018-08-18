@@ -72,7 +72,7 @@ static void CreateWidget()
 /* The main loop that checks the engine status */
 static float EngineCheckCallback(float inElapsedSinceLastCall, float inElapsedTimeSinceLastFlightLoop, int inCounter, void* inRefCon)
 {
-    if(g_disabled) {
+    if(g_disabled || g_completed) {
         XPLMUnregisterFlightLoopCallback(EngineCheckCallback, NULL);
         return 0.0f;
     }
@@ -125,6 +125,15 @@ static void menu_handler(void* in_menu_ref, void* in_item_ref)
 PLUGIN_API int XPluginEnable(void)
 {
     g_disabled = false;
+    if(g_num_engines == 0) {
+        XPLMDataRef num_engines_ref = XPLMFindDataRef("sim/aircraft/engine/acf_num_engines");
+        g_num_engines = XPLMGetDatai(num_engines_ref);
+        if(g_num_engines == 0) {
+            XPLMDebugString("LogInDummy: Could not read number of engines!!\n");
+            return 0;
+        }
+    }
+
     if(!g_completed) {
         XPLMRegisterFlightLoopCallback(EngineCheckCallback, 10.0, NULL);
     }
