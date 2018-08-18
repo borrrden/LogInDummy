@@ -25,7 +25,9 @@
 // 
 // For more information, please refer to <http://unlicense.org>
 
+#ifndef _CRT_SECURE_NO_WARNINGS
 #define _CRT_SECURE_NO_WARNINGS
+#endif
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
@@ -36,11 +38,14 @@
 #include <XPWidgets.h>
 #include <XPStandardWidgets.h>
 #include <XPLMMenus.h>
+#include "Preferences.h"
 
-static int g_num_engines = 0;           // The number of engines on the currently loaded aircraft
-static bool g_disabled = false;         // Was the plugin disabled by plugin admin?
-static bool g_completed = false;        // Did the plugin finish by displaying the popup?
-static XPWidgetID g_popup = NULL;       // The popup handle
+static int g_num_engines = 0;                   // The number of engines on the currently loaded aircraft
+static bool g_disabled = false;                 // Was the plugin disabled by plugin admin?
+static bool g_completed = false;                // Did the plugin finish by displaying the popup?
+static XPWidgetID g_popup = NULL;               // The popup handle
+static XPLMMenuID g_menu = NULL;                // The plugin menu
+static ini_file_t* g_prefs = NULL;              // The preferences handler
 
 /* Called upon interaction with the popup window */
 static int PopupHandler(XPWidgetMessage inMessage, XPWidgetID inWidget, long inParam1, long inParam2)
@@ -104,6 +109,19 @@ static float EngineCheckCallback(float inElapsedSinceLastCall, float inElapsedTi
     return 0.0;
 }
 
+static void menu_handler(void* in_menu_ref, void* in_item_ref)
+{
+    size_t choice = (size_t)in_item_ref;
+    char buffer[2];
+    itoa(choice, buffer, 10);
+    ini_write_value(g_prefs, "config", "popup_location", buffer);
+    ini_flush(g_prefs);
+
+    for(int i = 0; i < 2; i++) {
+        XPLMCheckMenuItem(g_menu, i, choice == i ? xplm_Menu_Checked : xplm_Menu_Unchecked);
+    }
+}
+
 PLUGIN_API int XPluginEnable(void)
 {
     g_disabled = false;
@@ -125,8 +143,33 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc)
     strcpy(outName, "LogInDummy");
     strcpy(outSig, "com.borrrden.logindummy");
     strcpy(outDesc, "Reminder to log into virtual airline");
-
     XPLMDebugString("LogInDummy: Started\n");
+
+    const int menu_container_idx = XPLMAppendMenuItem(XPLMFindPluginsMenu(), "LogInDummy", 0, 0);
+    g_menu = XPLMCreateMenu("LogInDummy", XPLMFindPluginsMenu(), menu_container_idx, menu_handler, NULL);
+    XPLMAppendMenuItem(g_menu, "Show at Aircraft Load", (void *)0, 0);
+    XPLMAppendMenuItem(g_menu, "Show after Engine Start", (void *)1, 0);
+
+    char path[512];
+    XPLMGetSystemPath(path);
+    strcat(path, "Resources");
+    strcat(path, XPLMGetDirectorySeparator());
+    strcat(path, "plugins");
+    strcat(path, XPLMGetDirectorySeparator());
+    strcat(path, "LogInDummy");
+    strcat(path, XPLMGetDirectorySeparator());
+    strcat(path, "LogInDummy.ini");
+
+    g_prefs = ini_create(path);
+    char* location_val = ini_get_value(g_prefs, "config", "popup_location");
+    if(!location_val || strcmp(location_val, "0") == 0) {
+        XPLMCheckMenuItem(g_menu, 0, xplm_Menu_Checked);
+        XPLMCheckMenuItem(g_menu, 1, xplm_Menu_Unchecked);
+    } else {
+        XPLMCheckMenuItem(g_menu, 0, xplm_Menu_Unchecked);
+        XPLMCheckMenuItem(g_menu, 1, xplm_Menu_Checked);
+    }
+    free(location_val);
 
     return 1;
 }
@@ -134,7 +177,10 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc)
 PLUGIN_API void XPluginStop(void)
 {
     XPLMDestroyWindow(g_popup);
+    XPLMDestroyMenu(g_menu);
+
     g_popup = NULL;
+    g_menu = NULL;
 }
 
 PLUGIN_API void XPluginReceiveMessage(XPLMPluginID inFrom, int inMsg, void * inParam)
@@ -153,8 +199,15 @@ PLUGIN_API void XPluginReceiveMessage(XPLMPluginID inFrom, int inMsg, void * inP
                         break;
                     }
 
-                    g_completed = false;
-                    XPLMRegisterFlightLoopCallback(EngineCheckCallback, 10.0, NULL);
+                    XPLMMenuCheck checked;
+                    XPLMCheckMenuItemState(g_menu, 0, &checked);
+                    if(checked == xplm_Menu_Checked) {
+                        CreateWidget();
+                        g_completed = true;
+                    } else {
+                        g_completed = false;
+                        XPLMRegisterFlightLoopCallback(EngineCheckCallback, 10.0, NULL);
+                    }
                 }
 
                 break;
