@@ -38,35 +38,86 @@
 #include <XPWidgets.h>
 #include <XPStandardWidgets.h>
 #include <XPLMMenus.h>
-#include "Preferences.h"
+#include "config.h"
+
+int BitmapWidgetProc(XPWidgetMessage inMessage, XPWidgetID inWidget, intptr_t inParam1, intptr_t inParam2);
 
 static int g_num_engines = 0;                   // The number of engines on the currently loaded aircraft
 static bool g_disabled = false;                 // Was the plugin disabled by plugin admin?
 static bool g_completed = false;                // Did the plugin finish by displaying the popup?
-static XPWidgetID g_popup = NULL;               // The popup handle
-static XPLMMenuID g_menu = NULL;                // The plugin menu
-static ini_file_t* g_prefs = NULL;              // The preferences handler
+static XPWidgetID g_popups[2] = {NULL, NULL};   // The popup handles
+static XPLMMenuID g_menus[2] = {NULL,NULL};     // The plugin menus
+static ini_table_s* g_prefs = NULL;             // The preferences handler
+static char g_prefs_path[512];
+
+enum menu_choice
+{
+    menu_popupLocation,
+    menu_main
+};
 
 /* Called upon interaction with the popup window */
 static int PopupHandler(XPWidgetMessage inMessage, XPWidgetID inWidget, long inParam1, long inParam2)
 {
     if(inMessage == xpMessage_CloseButtonPushed) {
-        XPHideWidget(g_popup);
+        XPHideWidget(inWidget);
         return 1;
     }
 
     return 0;
 }
 
+static int ConfigHandler(XPWidgetMessage inMessage, XPWidgetID inWidget, long inParam1, long inParam2)
+{
+    if(PopupHandler(inMessage, inWidget, inParam1, inParam2)) {
+        return 1;
+    }
+
+    if(inMessage == xpMsg_PushButtonPressed) {
+        XPWidgetID text_field = XPGetNthChildWidget(inWidget, 1);
+        char pic_path[512];
+        XPGetWidgetDescriptor(text_field, pic_path, 512);
+        ini_table_create_entry(g_prefs, "config", "pic_path", pic_path);
+    }
+}
+
 /* Create the popup */
 static void CreateWidget()
 {
+    char path[512];
+    XPLMGetSystemPath(path);
+    strcat(path, "Resources");
+    strcat(path, XPLMGetDirectorySeparator());
+    strcat(path, "plugins");
+    strcat(path, XPLMGetDirectorySeparator());
+    strcat(path, "LogInDummy");
+    strcat(path, XPLMGetDirectorySeparator());
+    const char* pic_path = ini_table_get_entry(g_prefs, "config", "pic_path");
+    strcat(path, pic_path);
+
     // All coordinates are relative to the screen, not to the widget itself
-    int x = 100, y = 550, x2 = 450, y2 = 450;
-    g_popup = XPCreateWidget(x, y, x2, y2, 1, "Reminder", 1, NULL, xpWidgetClass_MainWindow);
-    XPSetWidgetProperty(g_popup, xpProperty_MainWindowHasCloseBoxes, 1);
-    XPCreateWidget(x+50, y-25, x2-50, y2+20, 1, "Don't forget to log into your virtual airline", 0, g_popup, xpWidgetClass_Caption);
-    XPAddWidgetCallback(g_popup, PopupHandler);
+    int x = 100, y = 567, x2 = 402, y2 = 300;
+    g_popups[0] = XPCreateWidget(x, y, x2, y2, 1, "Reminder", 1, NULL, xpWidgetClass_MainWindow);
+    XPSetWidgetProperty(g_popups[0] , xpProperty_MainWindowHasCloseBoxes, 1);
+    if(pic_path) {
+        XPCreateCustomWidget(x, y - 40, x2, y2, 1, path, 0, g_popups[0], BitmapWidgetProc);
+    }
+
+    XPWidgetID caption = XPCreateWidget(x+50, y-15, x2-50, y-35, 1, "Don't forget to log into your virtual airline", 0, g_popups[0], xpWidgetClass_Caption);
+    XPAddWidgetCallback(g_popups[0], PopupHandler);
+}
+
+static void CreateConfig()
+{
+    const char* pic_path = ini_table_get_entry(g_prefs, "config", "pic_path");
+    int x = 500, y = 567, x2 = 1102, y2 = 400;
+    g_popups[1] = XPCreateWidget(x, y, x2, y2, 1, "Configuration", 1, NULL, xpWidgetClass_MainWindow);
+    XPSetWidgetProperty(g_popups[1] , xpProperty_MainWindowHasCloseBoxes, 1);
+    XPCreateWidget(x+25, y-25, x2-25, y-45, 1, "Enter the path to your background image", 0, g_popups[1], xpWidgetClass_Caption);
+    XPCreateWidget(x+25, y-50, x2-25, y-70, 1, pic_path, 0, g_popups[1], xpWidgetClass_TextField);
+    XPWidgetID button = XPCreateWidget(x+25, y-75, x+125, y-105, 1, "Save", 0, g_popups[1], xpWidgetClass_Button);
+    XPSetWidgetProperty(button, xpProperty_ButtonType, xpPushButton);
+    XPAddWidgetCallback(g_popups[1], ConfigHandler);
 }
 
 /* The main loop that checks the engine status */
@@ -95,13 +146,13 @@ static float EngineCheckCallback(float inElapsedSinceLastCall, float inElapsedTi
     }
 
     // If we don't have a popup yet, create one
-    if(!g_popup) {
+    if(!g_popups[0]) {
         CreateWidget();
     } 
 
     // Show the popup, if it is not visible already
-    if(!XPIsWidgetVisible(g_popup)) {
-        XPShowWidget(g_popup);
+    if(!XPIsWidgetVisible(g_popups[0])) {
+        XPShowWidget(g_popups[0]);
     }
 
     g_completed = true;
@@ -111,14 +162,21 @@ static float EngineCheckCallback(float inElapsedSinceLastCall, float inElapsedTi
 
 static void menu_handler(void* in_menu_ref, void* in_item_ref)
 {
+    if((int)in_menu_ref == menu_main) {
+        if((int)in_item_ref == 1) {
+            CreateConfig();
+        }
+
+        return;
+    }
+
     size_t choice = (size_t)in_item_ref;
     char buffer[2];
     itoa(choice, buffer, 10);
-    ini_write_value(g_prefs, "config", "popup_location", buffer);
-    ini_flush(g_prefs);
+    ini_table_create_entry(g_prefs, "config", "popup_location", buffer);
 
     for(int i = 0; i < 2; i++) {
-        XPLMCheckMenuItem(g_menu, i, choice == i ? xplm_Menu_Checked : xplm_Menu_Unchecked);
+        XPLMCheckMenuItem(g_menus[1], i, choice == i ? xplm_Menu_Checked : xplm_Menu_Unchecked);
     }
 }
 
@@ -155,41 +213,52 @@ PLUGIN_API int XPluginStart(char* outName, char* outSig, char* outDesc)
     XPLMDebugString("LogInDummy: Started\n");
 
     const int menu_container_idx = XPLMAppendMenuItem(XPLMFindPluginsMenu(), "LogInDummy", 0, 0);
-    g_menu = XPLMCreateMenu("LogInDummy", XPLMFindPluginsMenu(), menu_container_idx, menu_handler, NULL);
-    XPLMAppendMenuItem(g_menu, "Show at Aircraft Load", (void *)0, 0);
-    XPLMAppendMenuItem(g_menu, "Show after Engine Start", (void *)1, 0);
+    g_menus[0] = XPLMCreateMenu("LogInDummy", XPLMFindPluginsMenu(), menu_container_idx, menu_handler, (void *)menu_main);
+    XPLMAppendMenuItem(g_menus[0], "Popup Timing", NULL, 0);
+    g_menus[1] = XPLMCreateMenu("Popup Timing", g_menus[0], 0, menu_handler, (void *)menu_popupLocation);
+    XPLMAppendMenuItem(g_menus[1], "Show at Aircraft Load", (void *)0, 0);
+    XPLMAppendMenuItem(g_menus[1], "Show after Engine Start", (void *)1, 0);
 
-    char path[512];
-    XPLMGetSystemPath(path);
-    strcat(path, "Resources");
-    strcat(path, XPLMGetDirectorySeparator());
-    strcat(path, "plugins");
-    strcat(path, XPLMGetDirectorySeparator());
-    strcat(path, "LogInDummy");
-    strcat(path, XPLMGetDirectorySeparator());
-    strcat(path, "LogInDummy.ini");
+    XPLMGetSystemPath(g_prefs_path);
+    strcat(g_prefs_path, "Resources");
+    strcat(g_prefs_path, XPLMGetDirectorySeparator());
+    strcat(g_prefs_path, "plugins");
+    strcat(g_prefs_path, XPLMGetDirectorySeparator());
+    strcat(g_prefs_path, "LogInDummy");
+    strcat(g_prefs_path, XPLMGetDirectorySeparator());
+    strcat(g_prefs_path, "LogInDummy.ini");
 
-    g_prefs = ini_create(path);
-    char* location_val = ini_get_value(g_prefs, "config", "popup_location");
+    g_prefs = ini_table_create();
+    ini_table_read_from_file(g_prefs, g_prefs_path);
+    const char* location_val = ini_table_get_entry(g_prefs, "config", "popup_location");
     if(!location_val || strcmp(location_val, "0") == 0) {
-        XPLMCheckMenuItem(g_menu, 0, xplm_Menu_Checked);
-        XPLMCheckMenuItem(g_menu, 1, xplm_Menu_Unchecked);
+        XPLMCheckMenuItem(g_menus[1], 0, xplm_Menu_Checked);
+        XPLMCheckMenuItem(g_menus[1], 1, xplm_Menu_Unchecked);
     } else {
-        XPLMCheckMenuItem(g_menu, 0, xplm_Menu_Unchecked);
-        XPLMCheckMenuItem(g_menu, 1, xplm_Menu_Checked);
+        XPLMCheckMenuItem(g_menus[1], 0, xplm_Menu_Unchecked);
+        XPLMCheckMenuItem(g_menus[1], 1, xplm_Menu_Checked);
     }
-    free(location_val);
 
+    XPLMAppendMenuItem(g_menus[0], "Configure", (void *)1, 0);
     return 1;
 }
 
 PLUGIN_API void XPluginStop(void)
 {
-    XPLMDestroyWindow(g_popup);
-    XPLMDestroyMenu(g_menu);
+    XPDestroyWidget(g_popups[0], 1);
+    XPDestroyWidget(g_popups[1], 1);
+    for(int i = 0; i < 2; i++) {
+        XPLMDestroyMenu(g_menus[i]);
+        g_menus[i] = NULL;
+    }
 
-    g_popup = NULL;
-    g_menu = NULL;
+    for(int i = 0; i < 2; i++) {
+        XPDestroyWidget(g_popups[i], 1);
+        g_popups[i] = NULL;
+    }
+
+    ini_table_write_to_file(g_prefs, g_prefs_path);
+    ini_table_destroy(g_prefs);
 }
 
 PLUGIN_API void XPluginReceiveMessage(XPLMPluginID inFrom, int inMsg, void * inParam)
@@ -209,7 +278,7 @@ PLUGIN_API void XPluginReceiveMessage(XPLMPluginID inFrom, int inMsg, void * inP
                     }
 
                     XPLMMenuCheck checked;
-                    XPLMCheckMenuItemState(g_menu, 0, &checked);
+                    XPLMCheckMenuItemState(g_menus[1], 0, &checked);
                     if(checked == xplm_Menu_Checked) {
                         CreateWidget();
                         g_completed = true;
